@@ -3,7 +3,6 @@ import { protectedProcedure, publicProcedure } from "../context";
 import { t } from "../trpc";
 import { prisma } from "@/lib/prisma";
 import { xenditClient } from "@/lib/xendit/client";
-import axios from "axios";
 
 async function runEnrollFlow(params: {
   packageId: string;
@@ -46,16 +45,20 @@ async function runEnrollFlow(params: {
   let invoice = null;
 
   if (process.env.NODE_ENV === "production") {
-    const { data } = await axios.post(process.env.PAYMENT_PROXY_URL!, {
-      externalId: `meetly-${purchase.id}`,
-      amount: pkg.price,
-      description: `Package: ${pkg.name}`,
-      currency: pkg.currency as "IDR",
-      payerEmail,
-      successRedirectUrl: enrolledDetailUrl,
-      failureRedirectUrl: enrolledDetailUrl,
+    const proxyUrl = process.env.PAYMENT_PROXY_URL!;
+    await fetch(proxyUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        externalId: `meetly-${purchase.id}`,
+        amount: pkg.price,
+        description: `Package: ${pkg.name}`,
+        currency: pkg.currency as "IDR",
+        payerEmail,
+        successRedirectUrl: enrolledDetailUrl,
+        failureRedirectUrl: enrolledDetailUrl,
+      }),
     });
-    invoice = data;
     invoice = await xenditClient.Invoice.createInvoice({
       data: {
         externalId: `meetly-${purchase.id}`,
