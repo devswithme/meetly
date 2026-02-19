@@ -59,6 +59,7 @@ async function runEnrollFlow(params: {
         failureRedirectUrl: enrolledDetailUrl,
       }),
     });
+  } else {
     invoice = await xenditClient.Invoice.createInvoice({
       data: {
         externalId: `meetly-${purchase.id}`,
