@@ -46,7 +46,7 @@ async function runEnrollFlow(params: {
 
   if (process.env.NODE_ENV === "production") {
     const proxyUrl = process.env.PAYMENT_PROXY_URL!;
-    await fetch(proxyUrl, {
+    const data = await fetch(proxyUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -59,6 +59,7 @@ async function runEnrollFlow(params: {
         failureRedirectUrl: enrolledDetailUrl,
       }),
     });
+    invoice = await data.json();
   } else {
     invoice = await xenditClient.Invoice.createInvoice({
       data: {
