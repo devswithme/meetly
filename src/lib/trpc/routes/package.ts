@@ -40,7 +40,8 @@ async function runEnrollFlow(params: {
   });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL!;
-  const enrolledDetailUrl = `${baseUrl}/dashboard/enrolled/${purchase.id}`;
+  const successRedirectUrl = `${baseUrl}/success?purchase=${purchase.id}`;
+  const failureRedirectUrl = `${baseUrl}/failed?purchase=${purchase.id}`;
 
   let invoice = null;
 
@@ -55,8 +56,8 @@ async function runEnrollFlow(params: {
         description: `Package: ${pkg.name}`,
         currency: pkg.currency as "IDR",
         payerEmail,
-        successRedirectUrl: enrolledDetailUrl,
-        failureRedirectUrl: enrolledDetailUrl,
+        successRedirectUrl,
+        failureRedirectUrl,
       }),
     });
     invoice = await data.json();
@@ -68,8 +69,8 @@ async function runEnrollFlow(params: {
         description: `Package: ${pkg.name}`,
         currency: pkg.currency as "IDR",
         payerEmail,
-        successRedirectUrl: enrolledDetailUrl,
-        failureRedirectUrl: enrolledDetailUrl,
+        successRedirectUrl,
+        failureRedirectUrl,
       },
     });
   }
@@ -87,7 +88,8 @@ async function runEnrollFlow(params: {
   };
 }
 
-const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const CALENDAR_SCOPE =
+  "https://www.googleapis.com/auth/calendar.app.created";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 export const packageRouter = t.router({

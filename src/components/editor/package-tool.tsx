@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc/client";
 import TRPCLayout from "@/components/provider/trpc";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { Package, Plus, X } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -23,9 +24,26 @@ import Image from "next/image";
 interface MeetingSession {
   startDate: Date | null;
   timezone: string;
+  speakerEmails?: string[];
 }
 
 const MAX_MEETINGS_PER_EVENT = 3;
+const MAX_SPEAKER_EMAILS = 3;
+
+// Helper function to parse emails from space-separated input (max 3)
+const parseEmails = (input: string): string[] => {
+  const emails = input
+    .trim()
+    .split(/\s+/)
+    .filter((email) => email.length > 0)
+    .slice(0, MAX_SPEAKER_EMAILS);
+  return emails;
+};
+
+// Helper function to validate email format
+const isValidEmail = (email: string): boolean => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
 
 interface PackageData {
   name: string;
@@ -33,7 +51,7 @@ interface PackageData {
   includeMeet: boolean;
   includeDrive: boolean;
   meetings: MeetingSession[];
-  driveFolder: { path: string };
+  driveFolder: { path: string; speakerEmails?: string[] };
 }
 
 interface PackageFormProps {
@@ -60,24 +78,43 @@ const PackageForm: React.FC<PackageFormProps> = ({ initialData, onSave }) => {
   const hasDriveScope = scopes?.hasDriveScope ?? false;
 
   const initialMeetings = Array.isArray(initialData.meetings)
-    ? initialData.meetings.slice(0, MAX_MEETINGS_PER_EVENT)
-    : [{ startDate: null, timezone: "Asia/Jakarta" }];
+    ? initialData.meetings.slice(0, MAX_MEETINGS_PER_EVENT).map((m) => ({
+        startDate: m.startDate,
+        timezone: m.timezone,
+        speakerEmails: m.speakerEmails || [],
+      }))
+    : [{ startDate: null, timezone: "Asia/Jakarta", speakerEmails: [] }];
 
   const [meetings, setMeetings] = useState<MeetingSession[]>(initialMeetings);
+
+  // Track speaker email inputs for each meeting
+  const [meetingSpeakerEmailInputs, setMeetingSpeakerEmailInputs] = useState<
+    string[]
+  >(initialMeetings.map((m) => (m.speakerEmails || []).join(" ") || ""));
 
   const [driveFolderPath, setDriveFolderPath] = useState(
     initialData.driveFolder?.path || "",
   );
 
+  const [driveFolderSpeakerEmailsInput, setDriveFolderSpeakerEmailsInput] =
+    useState(initialData.driveFolder?.speakerEmails?.join(" ") || "");
+
   const timezones = ["Asia/Jakarta", "Asia/Singapore"];
 
   const addMeeting = () => {
     if (meetings.length >= MAX_MEETINGS_PER_EVENT) return;
-    setMeetings([...meetings, { startDate: null, timezone: "Asia/Jakarta" }]);
+    setMeetings([
+      ...meetings,
+      { startDate: null, timezone: "Asia/Jakarta", speakerEmails: [] },
+    ]);
+    setMeetingSpeakerEmailInputs([...meetingSpeakerEmailInputs, ""]);
   };
 
   const removeMeeting = (index: number) => {
     setMeetings(meetings.filter((_, i) => i !== index));
+    setMeetingSpeakerEmailInputs(
+      meetingSpeakerEmailInputs.filter((_, i) => i !== index),
+    );
   };
 
   const updateMeeting = (
@@ -90,10 +127,46 @@ const PackageForm: React.FC<PackageFormProps> = ({ initialData, onSave }) => {
     setMeetings(updated);
   };
 
+  const updateMeetingSpeakerEmails = (index: number, input: string) => {
+    const updatedInputs = [...meetingSpeakerEmailInputs];
+    updatedInputs[index] = input;
+    setMeetingSpeakerEmailInputs(updatedInputs);
+
+    // Parse and update the meeting's speakerEmails
+    const emails = parseEmails(input).filter(isValidEmail);
+    const updated = [...meetings];
+    updated[index] = {
+      ...updated[index],
+      speakerEmails: emails.length > 0 ? emails : undefined,
+    };
+    setMeetings(updated);
+  };
+
+  const removeMeetingSpeakerEmail = (
+    meetingIndex: number,
+    emailIndex: number,
+  ) => {
+    const updated = [...meetings];
+    const emails = [...(updated[meetingIndex].speakerEmails || [])];
+    emails.splice(emailIndex, 1);
+    updated[meetingIndex] = {
+      ...updated[meetingIndex],
+      speakerEmails: emails.length > 0 ? emails : undefined,
+    };
+    setMeetings(updated);
+
+    // Update input field
+    const updatedInputs = [...meetingSpeakerEmailInputs];
+    updatedInputs[meetingIndex] = emails.join(" ");
+    setMeetingSpeakerEmailInputs(updatedInputs);
+  };
+
   // When enabling Meet, ensure at least one meeting slot exists
   useEffect(() => {
     if (includeMeet && meetings.length === 0) {
-      setMeetings([{ startDate: null, timezone: "Asia/Jakarta" }]);
+      setMeetings([
+        { startDate: null, timezone: "Asia/Jakarta", speakerEmails: [] },
+      ]);
     }
   }, [includeMeet, meetings.length]);
 
@@ -105,12 +178,33 @@ const PackageForm: React.FC<PackageFormProps> = ({ initialData, onSave }) => {
       includeMeet,
       includeDrive,
       meetings: includeMeet
-        ? meetings.slice(0, MAX_MEETINGS_PER_EVENT)
+        ? meetings.slice(0, MAX_MEETINGS_PER_EVENT).map((m) => ({
+            startDate: m.startDate,
+            timezone: m.timezone,
+            speakerEmails:
+              m.speakerEmails && m.speakerEmails.length > 0
+                ? m.speakerEmails
+                : undefined,
+          }))
         : [],
-      driveFolder: { path: includeDrive ? driveFolderPath : "" },
+      driveFolder: {
+        path: includeDrive ? driveFolderPath : "",
+        speakerEmails:
+          includeDrive && driveFolderSpeakerEmailsInput.trim()
+            ? parseEmails(driveFolderSpeakerEmailsInput).filter(isValidEmail)
+            : undefined,
+      },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onSave is stable from block instance
-  }, [name, price, includeMeet, includeDrive, meetings, driveFolderPath]);
+  }, [
+    name,
+    price,
+    includeMeet,
+    includeDrive,
+    meetings,
+    driveFolderPath,
+    driveFolderSpeakerEmailsInput,
+  ]);
 
   return (
     <div className="border rounded-lg p-4 pt-2 bg-white space-y-4 not-prose my-2">
@@ -155,7 +249,7 @@ const PackageForm: React.FC<PackageFormProps> = ({ initialData, onSave }) => {
                       authClient.linkSocial({
                         provider: "google",
                         scopes: [
-                          "https://www.googleapis.com/auth/calendar.events",
+                          "https://www.googleapis.com/auth/calendar.app.created",
                         ],
                       })
                     }
@@ -167,46 +261,94 @@ const PackageForm: React.FC<PackageFormProps> = ({ initialData, onSave }) => {
                 <div className="space-y-2">
                   {Array.isArray(meetings)
                     ? meetings.map((meeting, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center border w-fit rounded-lg pr-1 overflow-hidden"
-                        >
-                          <DatePicker
-                            selected={meeting.startDate}
-                            onChange={(date) =>
-                              updateMeeting(index, "startDate", date)
-                            }
-                            showTimeSelect
-                            dateFormat="MMMM d, yyyy h:mm aa"
-                            className="border-none px-3 py-2 text-sm"
-                            placeholderText="Select datetime"
-                          />
-                          <Select
-                            value={meeting.timezone}
-                            onValueChange={(value) =>
-                              updateMeeting(index, "timezone", value)
-                            }
-                          >
-                            <SelectTrigger className="border-none shadow-none w-fit">
-                              <SelectValue placeholder="Theme" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {timezones.map((tz) => (
-                                <SelectItem key={tz} value={tz}>
-                                  {tz}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {meetings.length > 1 && (
-                            <Button
-                              onClick={() => removeMeeting(index)}
-                              size="icon-sm"
-                              variant="ghost"
+                        <div key={index} className="space-y-2">
+                          <div className="flex items-center border w-fit rounded-lg pr-1 overflow-hidden">
+                            <DatePicker
+                              selected={meeting.startDate}
+                              onChange={(date) =>
+                                updateMeeting(index, "startDate", date)
+                              }
+                              showTimeSelect
+                              dateFormat="MMMM d, yyyy h:mm aa"
+                              className="border-none px-3 py-2 text-sm"
+                              placeholderText="Select datetime"
+                            />
+                            <Select
+                              value={meeting.timezone}
+                              onValueChange={(value) =>
+                                updateMeeting(index, "timezone", value)
+                              }
                             >
-                              <X />
-                            </Button>
-                          )}
+                              <SelectTrigger className="border-none shadow-none w-fit">
+                                <SelectValue placeholder="Theme" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {timezones.map((tz) => (
+                                  <SelectItem key={tz} value={tz}>
+                                    {tz}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {meetings.length > 1 && (
+                              <Button
+                                onClick={() => removeMeeting(index)}
+                                size="icon-sm"
+                                variant="ghost"
+                              >
+                                <X />
+                              </Button>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Input
+                              type="text"
+                              value={meetingSpeakerEmailInputs[index] || ""}
+                              onChange={(e) =>
+                                updateMeetingSpeakerEmails(
+                                  index,
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="Email invitation (space-separated, max 3, optional)"
+                              className="text-sm w-full"
+                            />
+                            {meeting.speakerEmails &&
+                              meeting.speakerEmails.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-1">
+                                  {meeting.speakerEmails.map(
+                                    (email, emailIndex) => (
+                                      <Badge
+                                        key={emailIndex}
+                                        variant="secondary"
+                                        className="text-xs flex items-center gap-1"
+                                      >
+                                        <span>{email}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            removeMeetingSpeakerEmail(
+                                              index,
+                                              emailIndex,
+                                            )
+                                          }
+                                          className="ml-0.5 hover:text-destructive rounded-full hover:bg-destructive/10 p-0.5"
+                                          aria-label={`Remove ${email}`}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      </Badge>
+                                    ),
+                                  )}
+                                </div>
+                              )}
+                            {parseEmails(meetingSpeakerEmailInputs[index] || "")
+                              .length > MAX_SPEAKER_EMAILS && (
+                              <p className="text-xs text-muted-foreground">
+                                Max {MAX_SPEAKER_EMAILS} emails allowed
+                              </p>
+                            )}
+                          </div>
                         </div>
                       ))
                     : null}
@@ -254,17 +396,68 @@ const PackageForm: React.FC<PackageFormProps> = ({ initialData, onSave }) => {
                         scopes: ["https://www.googleapis.com/auth/drive.file"],
                       })
                     }
-                    className="text-blue-600 hover:underline"
                   >
                     Grant Google Drive access
                   </button>
                 </p>
               ) : (
-                <Input
-                  value={driveFolderPath}
-                  onChange={(e) => setDriveFolderPath(e.target.value)}
-                  placeholder="Folder name or path"
-                />
+                <div className="space-y-2">
+                  <Input
+                    value={driveFolderPath}
+                    onChange={(e) => setDriveFolderPath(e.target.value)}
+                    placeholder="Folder name or path"
+                  />
+                  <div className="space-y-2">
+                    <Input
+                      type="text"
+                      value={driveFolderSpeakerEmailsInput}
+                      onChange={(e) =>
+                        setDriveFolderSpeakerEmailsInput(e.target.value)
+                      }
+                      placeholder="Speaker emails (space-separated, max 3)"
+                      className="text-sm"
+                    />
+                    {parseEmails(driveFolderSpeakerEmailsInput).filter(
+                      isValidEmail,
+                    ).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {parseEmails(driveFolderSpeakerEmailsInput)
+                          .filter(isValidEmail)
+                          .map((email, index) => (
+                            <Badge
+                              key={index}
+                              variant="secondary"
+                              className="text-xs flex items-center gap-1"
+                            >
+                              <span>{email}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const emails = parseEmails(
+                                    driveFolderSpeakerEmailsInput,
+                                  ).filter(isValidEmail);
+                                  emails.splice(index, 1);
+                                  setDriveFolderSpeakerEmailsInput(
+                                    emails.join(" "),
+                                  );
+                                }}
+                                className="ml-0.5 hover:text-destructive rounded-full hover:bg-destructive/10 p-0.5"
+                                aria-label={`Remove ${email}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                      </div>
+                    )}
+                    {parseEmails(driveFolderSpeakerEmailsInput).length >
+                      MAX_SPEAKER_EMAILS && (
+                      <p className="text-xs text-muted-foreground">
+                        Max {MAX_SPEAKER_EMAILS} emails allowed
+                      </p>
+                    )}
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -292,8 +485,10 @@ class PackageTool {
       price: 0,
       includeMeet: false,
       includeDrive: false,
-      meetings: [{ startDate: null, timezone: "Asia/Jakarta" }],
-      driveFolder: { path: "" },
+      meetings: [
+        { startDate: null, timezone: "Asia/Jakarta", speakerEmails: [] },
+      ],
+      driveFolder: { path: "", speakerEmails: undefined },
     };
 
     const rawMeetings = Array.isArray(data?.meetings)
@@ -307,6 +502,11 @@ class PackageTool {
             : new Date(m.startDate as string)
           : null,
         timezone: m.timezone || "Asia/Jakarta",
+        speakerEmails: Array.isArray(m.speakerEmails)
+          ? m.speakerEmails
+          : (m as any).speakerEmail
+            ? [(m as any).speakerEmail]
+            : [],
       }),
     );
     const savedDrive = data?.driveFolder ?? defaults.driveFolder;
@@ -358,11 +558,22 @@ class PackageTool {
         ? meetingsArray.map((m) => ({
             startDate: m.startDate?.toISOString() || null,
             timezone: m.timezone || "Asia/Jakarta",
+            speakerEmails:
+              m.speakerEmails && m.speakerEmails.length > 0
+                ? m.speakerEmails
+                : undefined,
           }))
         : [],
       driveFolder: includeDrive
-        ? this.data.driveFolder || { path: "" }
-        : { path: "" },
+        ? {
+            path: this.data.driveFolder?.path || "",
+            speakerEmails:
+              this.data.driveFolder?.speakerEmails &&
+              this.data.driveFolder.speakerEmails.length > 0
+                ? this.data.driveFolder.speakerEmails
+                : undefined,
+          }
+        : { path: "", speakerEmails: undefined },
     };
   }
 

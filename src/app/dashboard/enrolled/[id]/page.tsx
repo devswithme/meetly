@@ -199,7 +199,7 @@ export default function EnrolledDetailPage() {
 
       <div className="mt-8">
         <Link
-          href={`/${event.id}`}
+          href={`/e/${event.id}`}
           className="text-sm text-blue-600 hover:underline"
         >
           View event page →

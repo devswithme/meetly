@@ -1,5 +1,34 @@
 import { google } from "googleapis";
+import { prisma } from "@/lib/prisma";
 import { getGoogleClient } from "./client";
+
+const MEETLY_CALENDAR_SUMMARY = "Meetly";
+
+/** Resolve the app-created calendar id for the user (create one if needed). Requires calendar.app.created scope. */
+async function getOrCreateAppCalendar(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { googleCalendarId: true },
+  });
+  if (user?.googleCalendarId) return user.googleCalendarId;
+
+  const client = await getGoogleClient(userId);
+  const calendar = google.calendar({ version: "v3", auth: client });
+  const res = await calendar.calendars.insert({
+    requestBody: {
+      summary: MEETLY_CALENDAR_SUMMARY,
+      description: "Events and Meet sessions from Meetly",
+    },
+  });
+  const calendarId = res.data.id;
+  if (!calendarId) throw new Error("Failed to create Meetly calendar");
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { googleCalendarId: calendarId },
+  });
+  return calendarId;
+}
 
 export async function createMeetEvent(params: {
   userId: string;
@@ -10,6 +39,7 @@ export async function createMeetEvent(params: {
 }) {
   const { userId, startDate, timezone, summary, durationMinutes = 60 } = params;
 
+  const calendarId = await getOrCreateAppCalendar(userId);
   const client = await getGoogleClient(userId);
   const calendar = google.calendar({ version: "v3", auth: client });
 
@@ -19,7 +49,7 @@ export async function createMeetEvent(params: {
   );
 
   const event = await calendar.events.insert({
-    calendarId: "primary",
+    calendarId,
     conferenceDataVersion: 1,
     requestBody: {
       summary,
@@ -63,6 +93,7 @@ export async function updateMeetEvent(params: {
     durationMinutes = 60,
   } = params;
 
+  const calendarId = await getOrCreateAppCalendar(userId);
   const client = await getGoogleClient(userId);
   const calendar = google.calendar({ version: "v3", auth: client });
 
@@ -72,7 +103,7 @@ export async function updateMeetEvent(params: {
   );
 
   await calendar.events.patch({
-    calendarId: "primary",
+    calendarId,
     eventId: meetingId,
     requestBody: {
       summary,
@@ -96,11 +127,12 @@ export async function cancelMeetEvent(params: {
 }) {
   const { userId, meetingId } = params;
 
+  const calendarId = await getOrCreateAppCalendar(userId);
   const client = await getGoogleClient(userId);
   const calendar = google.calendar({ version: "v3", auth: client });
 
   await calendar.events.delete({
-    calendarId: "primary",
+    calendarId,
     eventId: meetingId,
     // Notify all attendees that the event was cancelled
     sendUpdates: "all",
@@ -114,12 +146,13 @@ export async function addAttendeeToMeet(params: {
 }) {
   const { userId, meetingId, attendeeEmail } = params;
 
+  const calendarId = await getOrCreateAppCalendar(userId);
   const client = await getGoogleClient(userId);
   const calendar = google.calendar({ version: "v3", auth: client });
 
   // Get existing event
   const event = await calendar.events.get({
-    calendarId: "primary",
+    calendarId,
     eventId: meetingId,
   });
 
@@ -127,7 +160,7 @@ export async function addAttendeeToMeet(params: {
 
   // Add new attendee
   await calendar.events.patch({
-    calendarId: "primary",
+    calendarId,
     eventId: meetingId,
     requestBody: {
       attendees: [

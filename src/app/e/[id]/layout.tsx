@@ -60,7 +60,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://example.com";
-  const url = `${baseUrl}/${id}`;
+  const url = `${baseUrl}/e/${id}`;
   const imageUrl = event.imageUrl
     ? event.imageUrl.startsWith("http")
       ? event.imageUrl

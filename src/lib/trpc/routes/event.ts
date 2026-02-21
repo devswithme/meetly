@@ -7,8 +7,9 @@ import {
   cancelMeetEvent,
   createMeetEvent,
   updateMeetEvent,
+  addAttendeeToMeet,
 } from "@/lib/google/calendar";
-import { findOrCreateFolder } from "@/lib/google/drive";
+import { findOrCreateFolder, shareFolderWithUser } from "@/lib/google/drive";
 
 const BUCKET = "editor-images";
 
@@ -147,8 +148,12 @@ export const eventRouter = t.router({
       type PackageBlockData = {
         name?: string;
         price?: number;
-        meetings?: Array<{ startDate?: string; timezone?: string }>;
-        driveFolder?: { path?: string };
+        meetings?: Array<{
+          startDate?: string;
+          timezone?: string;
+          speakerEmail?: string;
+        }>;
+        driveFolder?: { path?: string; speakerEmail?: string };
       };
 
       const packageBlock = contentWithUrls.blocks?.find(
@@ -193,6 +198,22 @@ export const eventRouter = t.router({
                   startDateTime: meetEvent.startDateTime,
                   timezone: meeting.timezone || "UTC",
                 });
+
+                // Add speaker to meeting if speakerEmail is provided for this meeting
+                if (meeting.speakerEmail?.trim()) {
+                  try {
+                    await addAttendeeToMeet({
+                      userId,
+                      meetingId: meetEvent.meetingId,
+                      attendeeEmail: meeting.speakerEmail.trim(),
+                    });
+                  } catch (error) {
+                    console.error(
+                      `Failed to add speaker to meeting ${meetEvent.meetingId}:`,
+                      error,
+                    );
+                  }
+                }
               }
             } catch (error) {
               console.error("Failed to create Google Meet events:", error);
@@ -214,6 +235,23 @@ export const eventRouter = t.router({
                 folderPath: drivePath,
               });
               driveFolderId = folder.folderId;
+
+              // Share folder with speaker if speakerEmail is provided for this drive folder
+              if (pkgData.driveFolder?.speakerEmail?.trim()) {
+                try {
+                  await shareFolderWithUser({
+                    userId,
+                    folderId: folder.folderId,
+                    email: pkgData.driveFolder.speakerEmail.trim(),
+                    role: "reader",
+                  });
+                } catch (error) {
+                  console.error(
+                    `Failed to share folder with speaker:`,
+                    error,
+                  );
+                }
+              }
             } catch (error) {
               console.error("Failed to create/find Drive folder:", error);
             }
@@ -328,8 +366,12 @@ export const eventRouter = t.router({
       type PackageBlockData = {
         name?: string;
         price?: number;
-        meetings?: Array<{ startDate?: string; timezone?: string }>;
-        driveFolder?: { path?: string };
+        meetings?: Array<{
+          startDate?: string;
+          timezone?: string;
+          speakerEmail?: string;
+        }>;
+        driveFolder?: { path?: string; speakerEmail?: string };
       };
 
       const packageBlock = contentWithUrls.blocks?.find(
@@ -383,6 +425,22 @@ export const eventRouter = t.router({
                     startDateTime: meetEvent.startDateTime,
                     timezone: meeting.timezone || "UTC",
                   });
+
+                  // Add speaker to meeting if speakerEmail is provided for this meeting
+                  if (meeting.speakerEmail?.trim()) {
+                    try {
+                      await addAttendeeToMeet({
+                        userId,
+                        meetingId: meetEvent.meetingId,
+                        attendeeEmail: meeting.speakerEmail.trim(),
+                      });
+                    } catch (error) {
+                      console.error(
+                        `Failed to add speaker to meeting ${meetEvent.meetingId}:`,
+                        error,
+                      );
+                    }
+                  }
                 }
               } catch (error) {
                 console.error("Failed to create Google Meet events:", error);
@@ -402,6 +460,23 @@ export const eventRouter = t.router({
                   folderPath: updateDrivePath,
                 });
                 driveFolderId = folder.folderId;
+
+                // Share folder with speaker if speakerEmail is provided for this drive folder
+                if (pkgData.driveFolder?.speakerEmail?.trim()) {
+                  try {
+                    await shareFolderWithUser({
+                      userId,
+                      folderId: folder.folderId,
+                      email: pkgData.driveFolder.speakerEmail.trim(),
+                      role: "reader",
+                    });
+                  } catch (error) {
+                    console.error(
+                      `Failed to share folder with speaker:`,
+                      error,
+                    );
+                  }
+                }
               } catch (error) {
                 console.error("Failed to create/find Drive folder:", error);
               }
@@ -464,6 +539,22 @@ export const eventRouter = t.router({
                     startDateTime: meeting.startDate,
                     timezone: meeting.timezone || existing.timezone || "UTC",
                   });
+
+                  // Add speaker to existing meeting if speakerEmail is provided for this meeting
+                  if (meeting.speakerEmail?.trim()) {
+                    try {
+                      await addAttendeeToMeet({
+                        userId,
+                        meetingId: existing.meetingId,
+                        attendeeEmail: meeting.speakerEmail.trim(),
+                      });
+                    } catch (error) {
+                      console.error(
+                        `Failed to add speaker to existing meeting ${existing.meetingId}:`,
+                        error,
+                      );
+                    }
+                  }
                 } catch (error) {
                   console.error(
                     "Failed to update Google Meet event during reschedule:",
@@ -487,6 +578,22 @@ export const eventRouter = t.router({
                     startDateTime: meetEvent.startDateTime,
                     timezone: meeting.timezone || "UTC",
                   });
+
+                  // Add speaker to new meeting if speakerEmail is provided for this meeting
+                  if (meeting.speakerEmail?.trim()) {
+                    try {
+                      await addAttendeeToMeet({
+                        userId,
+                        meetingId: meetEvent.meetingId,
+                        attendeeEmail: meeting.speakerEmail.trim(),
+                      });
+                    } catch (error) {
+                      console.error(
+                        `Failed to add speaker to new meeting ${meetEvent.meetingId}:`,
+                        error,
+                      );
+                    }
+                  }
                 } catch (error) {
                   console.error(
                     "Failed to create new Google Meet event during reschedule:",
@@ -530,6 +637,26 @@ export const eventRouter = t.router({
                     : undefined,
               },
             });
+
+            // Share existing drive folder with speaker if speakerEmail is provided for this drive folder
+            if (
+              pkgData.driveFolder?.speakerEmail?.trim() &&
+              pkg.googleDriveFolderId
+            ) {
+              try {
+                await shareFolderWithUser({
+                  userId,
+                  folderId: pkg.googleDriveFolderId,
+                  email: pkgData.driveFolder.speakerEmail.trim(),
+                  role: "reader",
+                });
+              } catch (error) {
+                console.error(
+                  `Failed to share existing folder with speaker:`,
+                  error,
+                );
+              }
+            }
           }
         }
       }
